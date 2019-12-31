@@ -1,1 +1,2 @@
-# cloudDevOps
+# Simple Cloud Formation templates
+
