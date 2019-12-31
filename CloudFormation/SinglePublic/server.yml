@@ -49,6 +49,15 @@ Resources:
           #!/bin/bash
           apt-get update -y
 
+    # WebServer:
+    #     Type: AWS::EC2::Instance
+    #     Properties:
+    #         ImageId: ami-06d51e91cea0dac8d
+    #         InstanceType: t2.micro
+    #         SubnetId: !Ref PrivateSubnet1
+    #         SecurityGroupIds:
+    #         -   !Ref WebServerSecGroup
+
   WebServerEIP:
     Type: AWS::EC2::EIP
     Properties:

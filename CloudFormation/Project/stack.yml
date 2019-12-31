@@ -229,130 +229,99 @@ Resources:
                 ToPort: 65535
                 CidrIp: 0.0.0.0/0
 
-    # WebServer:
-    #     Type: AWS::EC2::Instance
-    #     Properties:
-    #         ImageId: ami-03b4aa59bf41f9ed4
-    #         InstanceType: t2.micro
-    #         NetworkInterfaces:
-    #         -   DeviceIndex: "0"
-    #             SubnetId: !Ref PrivateSubnet1
-    #             GroupSet: 
-    #             -   !GetAtt WebServerSecGroup.GroupId
+    InstanceProfile:
+        Type: AWS::IAM::InstanceProfile
+        Properties: 
+            Roles:
+            -   udagram
 
+    WebAppLaunchConfig: 
+        Type: AWS::AutoScaling::LaunchConfiguration
+        Properties:
+            IamInstanceProfile: !Ref InstanceProfile
+            InstanceType: t2.medium
+            ImageId: ami-06d51e91cea0dac8d
+            SecurityGroups:
+            -   !Ref WebServerSecGroup
+            BlockDeviceMappings:
+            -   DeviceName: "/dev/sdk"
+                Ebs:
+                    VolumeSize: '10'
+            UserData:
+                Fn::Base64: !Sub |
+                    #!/bin/bash
+                    apt-get update -y
+                    apt-get install unzip awscli -y
+                    apt-get install apache2 -y
+                    systemctl start apache2.service
+                    cd /var/www/html
+                    aws s3 cp s3://udacity-demo-1/udacity.zip .
+                    unzip -o udacity.zip
 
-    # InstanceProfile:
-    #     Type: AWS::IAM::InstanceProfile
-    #     Properties: 
-    #         Roles:
-    #         -   udagram
+    WebAppTargetGroup:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        Properties:
+            HealthCheckIntervalSeconds: 10
+            HealthCheckPath: /
+            HealthCheckProtocol: HTTP
+            HealthCheckTimeoutSeconds: 8
+            HealthyThresholdCount: 2
+            Port: 80
+            Protocol: HTTP
+            UnhealthyThresholdCount: 5
+            VpcId: !Ref VPC
 
-    # WebAppLaunchConfig: 
-    #     Type: AWS::AutoScaling::LaunchConfiguration
-    #     Properties:
-    #         # UserData:
-    #         #     Fn::Base64: !Sub |
-    #         #         #!/bin/bash
-    #         #         apt-get update -y
-    #         #         apt-get install unzip awscli -y
-    #         #         apt-get install apache2 -y
-    #         #         systemctl start apache2.service
-    #         #         cd /var/www/html
-    #         #         aws s3 cp s3://udacity-demo-1/udacity.zip .
-    #         #         unzip -o udacity.zip
-    #         ImageId: ami-02cbed67225579b2c
-    #         #KeyName: platforms-key
-    #         IamInstanceProfile: !Ref InstanceProfile
-    #         SecurityGroups:
-    #         -   Ref: WebServerSecGroup
-    #         InstanceType: t2.micro
-    #         BlockDeviceMappings:
-    #         -   DeviceName: "/dev/sdk"
-    #             Ebs:
-    #                 VolumeSize: '10'
+    WebAppScalingGroup:
+        Type: AWS::AutoScaling::AutoScalingGroup
+        Properties:
+            VPCZoneIdentifier:  
+            -   !Ref PrivateSubnet1
+            -   !Ref PrivateSubnet2 
+            LaunchConfigurationName:
+                Ref: WebAppLaunchConfig
+            MinSize: '2'
+            MaxSize: '4'
+            TargetGroupARNs:
+            -   Ref: WebAppTargetGroup
 
-    # WebAppTargetGroup:
-    #     Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    #     Properties:
-    #         HealthCheckIntervalSeconds: 10
-    #         HealthCheckPath: /
-    #         HealthCheckProtocol: HTTP
-    #         HealthCheckTimeoutSeconds: 8
-    #         HealthyThresholdCount: 2
-    #         Port: 80
-    #         Protocol: HTTP
-    #         UnhealthyThresholdCount: 5
-    #         VpcId: !Ref VPC
+    WebAppLB:
+        Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+        Properties:
+            SecurityGroups:
+            - Ref: LoadBalancerSecGroup
+            Subnets:
+            - !Ref PublicSubnet1
+            - !Ref PublicSubnet2
 
-    # WebAppScalingGroup:
-    #     Type: AWS::AutoScaling::AutoScalingGroup
-    #     Properties:
-    #         VPCZoneIdentifier:  
-    #         -   !Ref PrivateSubnet1
-    #         -   !Ref PrivateSubnet2 
-    #         LaunchConfigurationName:
-    #             Ref: WebAppLaunchConfig
-    #         MinSize: '1'
-    #         MaxSize: '2'
-    #         TargetGroupARNs:
-    #         -   Ref: WebAppTargetGroup
+    Listener:
+        Type: AWS::ElasticLoadBalancingV2::Listener
+        Properties:
+            DefaultActions:
+            -   Type: forward
+                TargetGroupArn:
+                    Ref: WebAppTargetGroup
+            LoadBalancerArn:
+                Ref: WebAppLB
+            Port: '80'
+            Protocol: HTTP
 
-#     WebAppLB:
-#         Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-#         Properties:
-#             SecurityGroups:
-#             - Ref: LoadBalancerSecGroup
-#             Subnets:
-#             - !Ref PublicSubnet1
-#             - !Ref PublicSubnet2
-
-#     Listener:
-#         Type: AWS::ElasticLoadBalancingV2::Listener
-#         Properties:
-#             DefaultActions:
-#             -   Type: forward
-#                 TargetGroupArn:
-#                     Ref: WebAppTargetGroup
-#             LoadBalancerArn:
-#                 Ref: WebAppLB
-#             Port: '80'
-#             Protocol: HTTP
-
-#     ALBListenerRule:
-#         Type: AWS::ElasticLoadBalancingV2::ListenerRule
-#         Properties:
-#             Actions:
-#             -   Type: forward
-#                 TargetGroupArn: !Ref 'WebAppTargetGroup'
-#             Conditions:
-#             -   Field: path-pattern
-#                 Values: [/]
-#             ListenerArn: !Ref 'Listener'
-#             Priority: 1
+    ALBListenerRule:
+        Type: AWS::ElasticLoadBalancingV2::ListenerRule
+        Properties:
+            Actions:
+            -   Type: forward
+                TargetGroupArn: !Ref 'WebAppTargetGroup'
+            Conditions:
+            -   Field: path-pattern
+                Values: [/]
+            ListenerArn: !Ref 'Listener'
+            Priority: 1
             
             
-# Outputs:
+Outputs:
 
-#     VPC:
-#         Description: A reference to the created VPC
-#         Value: !Ref VPC
-#         Export:
-#           Name: !Sub ${EnvironmentName}-VPCID
-
-#     PublicSubnets:
-#         Description: A list of the public subnets
-#         Value: !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2 ]]
-#         Export:
-#           Name: !Sub ${EnvironmentName}-PUB-NETS
-
-#     PrivateSubnets:
-#         Description: A list of the private subnets
-#         Value: !Join [ ",", [ !Ref PrivateSubnet1, !Ref PrivateSubnet2 ]]
-#         Export:
-#           Name: !Sub ${EnvironmentName}-PRIV-NETS
-
-#     WebAppLoadBalancerDNSName:
-#         Description: DNS name or Public URL of the Load Balancer
-#         Value: !Join [ "", [ 'http://', !GetAtt WebAppLB.DNSName ]]
-#         Export:
-#             Name: !Sub ${EnvironmentName}-LB-DNSName
+    WebAppLoadBalancerDNSName:
+        Description: DNS name or Public URL of the Load Balancer
+        Value: !Join [ "", [ 'http://', !GetAtt WebAppLB.DNSName ]]
+        Export:
+            Name: !Sub ${EnvironmentName}-LB-DNS
