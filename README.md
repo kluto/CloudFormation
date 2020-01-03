@@ -1,2 +1,3 @@
-# Simple Cloud Formation templates
+# Cloud Formation
 
+templates, parameters, diagrams
